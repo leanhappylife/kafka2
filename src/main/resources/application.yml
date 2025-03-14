@@ -1,0 +1,67 @@
+# IBM MQ 全局配置
+ibm:
+  mq:
+    queueManager: "QM1"
+    channel: "DEV.APP.SVRCONN"
+    connName: "localhost(1414)"
+    user: "app"
+    password: "pass"
+    queue: "commonQueue"
+
+# Kafka 全局配置
+kafka-config:
+  bootstrap-servers: "localhost:9096,localhost:9099"
+  consumerDefaults:
+    auto-offset-reset: "earliest"
+    security-protocol: "SASL_SSL"
+    sasl-mechanism: "SCRAM-SHA-512"
+    sasl-jaas-config: 'org.apache.kafka.common.security.scram.ScramLoginModule required username="kafka_consumer_user" password="HSBC-MSK-DEV-cns";'
+  producers:
+    share-broker-order-domain-event:
+      client-id: "cmt-ems-eq-service"
+      retries: 0
+  consumers:
+    fix-gateway:
+      client-id: "cmt-ems-eq-service"
+      group-id: "cmt-ems-eq-consumer-group"
+      auto-offset-reset: "earliest"
+      properties:
+        sasl-mechanism: "SCRAM-SHA-512"
+        sasl.jaas.config: "org.apache.kafka.common.security.scram.ScramLoginModule required username=\"kafka_consumer_user\" password=\"HSBC-MSK-DEV-cns\""
+        security.protocol: "SASL_SSL"
+
+# 各产品主题配置（f2b、b2f）
+topics:
+  product:
+    equity:
+      f2b:
+        fix-gateway-emsx-execution-response:
+          name: "topic_v1_share_bbg_emsx_response_local"
+          concurrency: 2
+        share-broker-order-event:
+          name: "topic_v1_share_trade_order_event_local"
+          concurrency: 1
+      b2f:
+        b2f_fix-gateway-emsx-execution-response:
+          name: "b2f_fixtopic_v1_share_bbg_emsx_response_local"
+          concurrency: 2
+        b2f_fixshare-broker-order-event:
+          name: "b2f_fix_topic_v1_share_trade_order_event_local"
+          concurrency: 1
+    fixincome:
+      f2b:
+        fi_fix-gateway-emsx-execution-response:
+          name: "fi_topic_v1_share_bbg_emsx_response_local"
+          concurrency: 2
+        fi_share-broker-order-event:
+          name: "fi_topic_v1_share_trade_order_event_local"
+          concurrency: 1
+    productX:
+      f2b:
+        some-message-type:
+          name: "productX_topic_response_local"
+          concurrency: 2
+camel:
+  springboot:
+    main-run-controller=true:
+
