@@ -2,7 +2,7 @@ package com.example.route;
 
 import com.example.config.KafkaConfigProperties;
 import com.example.config.TopicsProperties;
-import com.example.config.KafkaClientIdManager;
+import com.example.util.KafkaClientIdManager;
 import org.apache.camel.LoggingLevel;
 import org.apache.camel.builder.RouteBuilder;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,6 +21,9 @@ public class F2bSpartaRoute extends RouteBuilder {
     @Autowired
     private TopicsProperties topicsProperties;
 
+    @Autowired
+    private KafkaClientIdManager kafkaClientIdManager;
+
     @Override
     public void configure() throws Exception {
         Map<String, Map<String, Map<String, TopicsProperties.TopicInfo>>> productTopics = topicsProperties.getProduct();
@@ -37,16 +40,14 @@ public class F2bSpartaRoute extends RouteBuilder {
                 continue;
             }
 
-            // Retrieve f2b channel
             Map<String, TopicsProperties.TopicInfo> f2bTopics = channels.get("f2b");
             if (f2bTopics == null || f2bTopics.isEmpty()) {
                 log.warn("Product [{}] has no f2b channel configuration.", productName);
                 continue;
             }
 
-            // Compute max concurrency and remove duplicate topics
             Set<String> topicSet = new HashSet<>();
-            int maxConcurrency = 1; // Ensure at least 1 consumer
+            int maxConcurrency = 1;
             for (TopicsProperties.TopicInfo topicInfo : f2bTopics.values()) {
                 topicSet.add(topicInfo.getName());
                 if (topicInfo.getConcurrency() > maxConcurrency) {
@@ -59,19 +60,19 @@ public class F2bSpartaRoute extends RouteBuilder {
             }
             String joinedTopics = String.join(",", topicSet);
 
-            // Generate a unique clientId (prefer reuse, avoid MBean conflict)
-            String clientId = KafkaClientIdManager.getUniqueClientId(productName);
+            // 🔥 FIX: Ensure only one instance of the client ID is used
+            String clientId = kafkaClientIdManager.getUniqueClientId(productName);
             String groupId = productName + "-f2b-consumer-group";
 
-            // Retrieve global Kafka consumer configuration
             Map<String, String> consumerDefaults = kafkaConfigProperties.getConsumerDefaults();
             String autoOffsetReset = consumerDefaults.get("auto-offset-reset");
             String securityProtocol = consumerDefaults.get("security-protocol");
             String saslMechanism = consumerDefaults.get("sasl-mechanism");
             String saslJaasConfig = consumerDefaults.get("sasl-jaas-config");
-            String jmxEnabled = consumerDefaults.getOrDefault("jmxEnabled", "true"); // JMX enabled by default, can be disabled
 
-            // Construct Kafka URI
+            // 🔥 FIX: Explicitly disable JMX registration
+            String jmxEnabled = "false";
+
             String kafkaUri = String.format("kafka:%s?brokers=%s" +
                             "&groupId=%s" +
                             "&clientId=%s" +
@@ -80,7 +81,7 @@ public class F2bSpartaRoute extends RouteBuilder {
                             "&saslMechanism=%s" +
                             "&saslJaasConfig=%s" +
                             "&concurrentConsumers=%d" +
-                            "&jmxEnabled=%s", // Allow JMX disabling
+                            "&jmxEnabled=%s",
                     joinedTopics,
                     kafkaConfigProperties.getBootstrapServers(),
                     groupId,
@@ -92,7 +93,6 @@ public class F2bSpartaRoute extends RouteBuilder {
                     maxConcurrency,
                     jmxEnabled);
 
-            // Define route ID
             String routeId = "F2B_" + productName;
 
             from(kafkaUri)

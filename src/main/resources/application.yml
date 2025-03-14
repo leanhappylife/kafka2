@@ -16,6 +16,7 @@ kafka-config:
     security-protocol: "SASL_SSL"
     sasl-mechanism: "SCRAM-SHA-512"
     sasl-jaas-config: 'org.apache.kafka.common.security.scram.ScramLoginModule required username="kafka_consumer_user" password="HSBC-MSK-DEV-cns";'
+    jmxEnabled: false
   producers:
     share-broker-order-domain-event:
       client-id: "cmt-ems-eq-service"
