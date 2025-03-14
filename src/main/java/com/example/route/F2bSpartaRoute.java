@@ -2,15 +2,12 @@ package com.example.route;
 
 import com.example.config.KafkaConfigProperties;
 import com.example.config.TopicsProperties;
-import com.example.util.KafkaClientIdManager;
 import org.apache.camel.LoggingLevel;
 import org.apache.camel.builder.RouteBuilder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
-import java.util.HashSet;
 import java.util.Map;
-import java.util.Set;
 
 @Component
 public class F2bSpartaRoute extends RouteBuilder {
@@ -20,9 +17,6 @@ public class F2bSpartaRoute extends RouteBuilder {
 
     @Autowired
     private TopicsProperties topicsProperties;
-
-    @Autowired
-    private KafkaClientIdManager kafkaClientIdManager;
 
     @Override
     public void configure() throws Exception {
@@ -46,59 +40,45 @@ public class F2bSpartaRoute extends RouteBuilder {
                 continue;
             }
 
-            Set<String> topicSet = new HashSet<>();
-            int maxConcurrency = 1;
-            for (TopicsProperties.TopicInfo topicInfo : f2bTopics.values()) {
-                topicSet.add(topicInfo.getName());
-                if (topicInfo.getConcurrency() > maxConcurrency) {
-                    maxConcurrency = topicInfo.getConcurrency();
-                }
+            for (Map.Entry<String, TopicsProperties.TopicInfo> topicEntry : f2bTopics.entrySet()) {
+                String topicName = topicEntry.getValue().getName();
+                int concurrency = Math.max(topicEntry.getValue().getConcurrency(), 1); // Ensure at least 1 consumer
+
+                String groupId = productName + "-f2b-consumer-group";
+                String clientId = productName + "-f2b-client-${threadName}"; //  Unique per thread
+
+                Map<String, String> consumerDefaults = kafkaConfigProperties.getConsumerDefaults();
+                String autoOffsetReset = consumerDefaults.get("auto-offset-reset");
+                String securityProtocol = consumerDefaults.get("security-protocol");
+                String saslMechanism = consumerDefaults.get("sasl-mechanism");
+                String saslJaasConfig = consumerDefaults.get("sasl-jaas-config");
+                String jmxEnabled = consumerDefaults.getOrDefault("jmxEnabled", "true"); // JMX enabled by default
+
+                String kafkaUri = String.format("kafka:%s?brokers=%s" +
+                                "&groupId=%s" +
+                                "&clientId=%s" +
+                                "&autoOffsetReset=%s" +
+                                "&securityProtocol=%s" +
+                                "&saslMechanism=%s" +
+                                "&saslJaasConfig=%s" +
+                                "&concurrentConsumers=%d" + // 🔥 Kafka automatically manages multiple consumers
+                                "&jmxEnabled=%s",
+                        topicName,
+                        kafkaConfigProperties.getBootstrapServers(),
+                        groupId,
+                        clientId,
+                        autoOffsetReset,
+                        securityProtocol,
+                        saslMechanism,
+                        saslJaasConfig,
+                        concurrency, // Number of consumers
+                        jmxEnabled);
+
+                from(kafkaUri)
+                        .routeId("F2B_" + productName + "_" + topicName)
+
+                        .to("direct:process");
             }
-            if (topicSet.isEmpty()) {
-                log.warn("Product [{}] has no topics configured for the f2b channel.", productName);
-                continue;
-            }
-            String joinedTopics = String.join(",", topicSet);
-
-            // 🔥 FIX: Ensure only one instance of the client ID is used
-            String clientId = kafkaClientIdManager.getUniqueClientId(productName);
-            String groupId = productName + "-f2b-consumer-group";
-
-            Map<String, String> consumerDefaults = kafkaConfigProperties.getConsumerDefaults();
-            String autoOffsetReset = consumerDefaults.get("auto-offset-reset");
-            String securityProtocol = consumerDefaults.get("security-protocol");
-            String saslMechanism = consumerDefaults.get("sasl-mechanism");
-            String saslJaasConfig = consumerDefaults.get("sasl-jaas-config");
-
-            // 🔥 FIX: Explicitly disable JMX registration
-            String jmxEnabled = "false";
-
-            String kafkaUri = String.format("kafka:%s?brokers=%s" +
-                            "&groupId=%s" +
-                            "&clientId=%s" +
-                            "&autoOffsetReset=%s" +
-                            "&securityProtocol=%s" +
-                            "&saslMechanism=%s" +
-                            "&saslJaasConfig=%s" +
-                            "&concurrentConsumers=%d" +
-                            "&jmxEnabled=%s",
-                    joinedTopics,
-                    kafkaConfigProperties.getBootstrapServers(),
-                    groupId,
-                    clientId,
-                    autoOffsetReset,
-                    securityProtocol,
-                    saslMechanism,
-                    saslJaasConfig,
-                    maxConcurrency,
-                    jmxEnabled);
-
-            String routeId = "F2B_" + productName;
-
-            from(kafkaUri)
-                    .routeId(routeId)
-//                    .log(LoggingLevel.INFO, "Product [{}] f2b route received a message from topic [{}]: {}", productName, "${header.CamelKafkaTopic}", "${body}")
-                    .to("direct:process");
         }
     }
 }
