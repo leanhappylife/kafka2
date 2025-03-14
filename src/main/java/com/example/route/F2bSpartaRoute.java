@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
+import java.util.UUID;
 
 @Component
 public class F2bSpartaRoute extends RouteBuilder {
@@ -45,7 +46,6 @@ public class F2bSpartaRoute extends RouteBuilder {
                 int concurrency = Math.max(topicEntry.getValue().getConcurrency(), 1); // Ensure at least 1 consumer
 
                 String groupId = productName + "-f2b-consumer-group";
-                String clientId = productName + "-f2b-client-${threadName}"; //  Unique per thread
 
                 Map<String, String> consumerDefaults = kafkaConfigProperties.getConsumerDefaults();
                 String autoOffsetReset = consumerDefaults.get("auto-offset-reset");
@@ -54,30 +54,35 @@ public class F2bSpartaRoute extends RouteBuilder {
                 String saslJaasConfig = consumerDefaults.get("sasl-jaas-config");
                 String jmxEnabled = consumerDefaults.getOrDefault("jmxEnabled", "true"); // JMX enabled by default
 
-                String kafkaUri = String.format("kafka:%s?brokers=%s" +
-                                "&groupId=%s" +
-                                "&clientId=%s" +
-                                "&autoOffsetReset=%s" +
-                                "&securityProtocol=%s" +
-                                "&saslMechanism=%s" +
-                                "&saslJaasConfig=%s" +
-                                "&concurrentConsumers=%d" + // 🔥 Kafka automatically manages multiple consumers
-                                "&jmxEnabled=%s",
-                        topicName,
-                        kafkaConfigProperties.getBootstrapServers(),
-                        groupId,
-                        clientId,
-                        autoOffsetReset,
-                        securityProtocol,
-                        saslMechanism,
-                        saslJaasConfig,
-                        concurrency, // Number of consumers
-                        jmxEnabled);
+                // 🔥 Manually create multiple consumers
+                for (int i = 0; i < concurrency; i++) {
+                    String clientId = String.format("%s-f2b-client-%d-%s", productName, i, UUID.randomUUID().toString().substring(0, 8)); // Unique clientId for each consumer
 
-                from(kafkaUri)
-                        .routeId("F2B_" + productName + "_" + topicName)
+                    String kafkaUri = String.format("kafka:%s?brokers=%s" +
+                                    "&groupId=%s" +
+                                    "&clientId=%s" +
+                                    "&autoOffsetReset=%s" +
+                                    "&securityProtocol=%s" +
+                                    "&saslMechanism=%s" +
+                                    "&saslJaasConfig=%s" +
+                                    "&concurrentConsumers=1" ,
+                            topicName,
+                            kafkaConfigProperties.getBootstrapServers(),
+                            groupId,
+                            clientId,
+                            autoOffsetReset,
+                            securityProtocol,
+                            saslMechanism,
+                            saslJaasConfig,
+                            jmxEnabled);
 
-                        .to("direct:process");
+                    String routeId = String.format("F2B_%s_%s_%d", productName, topicName, i);
+
+                    from(kafkaUri)
+                            .routeId(routeId)
+
+                            .to("direct:process");
+                }
             }
         }
     }
